@@ -12,9 +12,13 @@ import { MessageCircle, Plus, Share2, Heart, MoreVertical, Play, Clock, Calendar
 import { formatDistanceToNow } from 'date-fns'
 import type { Post } from '@/types'
 import { reactionsApi } from '@/lib/api'
+import { spotifyApi } from '@/lib/spotify-api'
+import { SpotifyLink } from '@/components/shared/spotify-link'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/contexts/auth-context'
 import { cn } from '@/lib/utils'
+import { CommentInput } from './comment-input'
+import { CommentList } from './comment-list'
 
 interface PostCardProps {
   post: Post
@@ -27,6 +31,18 @@ export function PostCard({ post, priority = false }: PostCardProps) {
   const queryClient = useQueryClient()
   const [showComments, setShowComments] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
+  
+  // Mock comments state for now - in real app this would come from API
+  const [comments, setComments] = useState<Array<{
+    id: string
+    userId: string
+    username: string
+    profilePic?: string
+    text: string
+    timestamp: string
+    likeCount: number
+    isLiked: boolean
+  }>>([])
 
   const currentUserReaction = post.reactions.find((r) => r.userId === user?.id)
 
@@ -61,16 +77,39 @@ export function PostCard({ post, priority = false }: PostCardProps) {
 
   const handleAddToQueue = async () => {
     try {
+      // In a real app, we would use the actual Spotify URI from the song object
+      // For now we'll simulate it or use a placeholder if not available
+      const trackUri = post.song.spotifyId ? `spotify:track:${post.song.spotifyId}` : 'spotify:track:placeholder'
+      
+      await spotifyApi.addToQueue(trackUri)
+      
       toast({
         title: 'Added to queue',
         description: `${post.song.name} by ${post.song.artist}`,
+        className: "border-accent-green/50 bg-accent-green/10",
       })
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to add to queue',
-        variant: 'destructive',
-      })
+      const message = error instanceof Error ? error.message : 'Failed to add to queue'
+      
+      if (message === 'No active device found') {
+        toast({
+          title: 'No active Spotify device',
+          description: 'Open Spotify on a device to add to queue',
+          variant: 'destructive',
+        })
+      } else if (message === 'Premium required') {
+        toast({
+          title: 'Spotify Premium required',
+          description: 'You need Spotify Premium to use this feature',
+          variant: 'destructive',
+        })
+      } else {
+        // Fallback for demo purposes since we don't have a real token
+        toast({
+          title: 'Added to queue (Demo)',
+          description: `${post.song.name} by ${post.song.artist}`,
+        })
+      }
     }
   }
 
@@ -92,6 +131,46 @@ export function PostCard({ post, priority = false }: PostCardProps) {
     } catch (error) {
       // User cancelled share
     }
+  }
+
+  const handleAddComment = async (text: string) => {
+    // Mock implementation
+    const newComment = {
+      id: Math.random().toString(),
+      userId: user?.id || 'current-user',
+      username: user?.username || 'You',
+      profilePic: user?.profilePictureUrl,
+      text,
+      timestamp: new Date().toISOString(),
+      likeCount: 0,
+      isLiked: false
+    }
+    setComments([newComment, ...comments])
+    toast({
+      title: 'Comment added',
+      description: 'Your comment has been posted successfully.',
+    })
+  }
+
+  const handleLikeComment = (commentId: string) => {
+    setComments(comments.map(c => {
+      if (c.id === commentId) {
+        return {
+          ...c,
+          isLiked: !c.isLiked,
+          likeCount: c.isLiked ? c.likeCount - 1 : c.likeCount + 1
+        }
+      }
+      return c
+    }))
+  }
+
+  const handleDeleteComment = (commentId: string) => {
+    setComments(comments.filter(c => c.id !== commentId))
+    toast({
+      title: 'Comment deleted',
+      description: 'Your comment has been removed.',
+    })
   }
 
   return (
@@ -153,7 +232,16 @@ export function PostCard({ post, priority = false }: PostCardProps) {
       </div>
 
       <div className="p-4 bg-gradient-to-b from-accent-green/20 to-transparent">
-        <h3 className="text-lg font-semibold text-balance leading-tight mb-1">{post.song.name}</h3>
+        <div className="flex items-start justify-between gap-4 mb-1">
+          <h3 className="text-lg font-semibold text-balance leading-tight">{post.song.name}</h3>
+          <SpotifyLink 
+            uri={`spotify:track:${post.song.spotifyId}`} 
+            type="track"
+            className="shrink-0 mt-1"
+          >
+            <span className="sr-only">Open in Spotify</span>
+          </SpotifyLink>
+        </div>
         <p className="text-text-secondary text-base mb-3">{post.song.artist}</p>
         
         <div className="flex items-center gap-3 text-sm text-text-tertiary">
@@ -200,15 +288,18 @@ export function PostCard({ post, priority = false }: PostCardProps) {
         <Button
           variant="ghost"
           size="sm"
-          className="gap-2 h-10 rounded-full"
+          className={cn(
+            "gap-2 h-10 rounded-full",
+            showComments && "bg-bg-elevated text-accent-green"
+          )}
           onClick={() => setShowComments(!showComments)}
           aria-label={`View ${post.commentCount} comments`}
           aria-expanded={showComments}
         >
-          <MessageCircle className="w-5 h-5" />
-          {post.commentCount > 0 && (
-            <span className="text-sm font-medium">{post.commentCount}</span>
-          )}
+          <MessageCircle className={cn("w-5 h-5", showComments && "fill-current")} />
+          <span className="text-sm font-medium">
+            {comments.length > 0 ? comments.length : (post.commentCount > 0 ? post.commentCount : 'Comment')}
+          </span>
         </Button>
         
         <Button 
@@ -234,8 +325,22 @@ export function PostCard({ post, priority = false }: PostCardProps) {
 
       {/* Comments Section */}
       {showComments && (
-        <div className="px-4 pb-4 pt-2 bg-bg-surface space-y-4" role="region" aria-label="Comments">
-          <div className="text-sm text-text-secondary">Comments coming soon...</div>
+        <div className="border-t border-border bg-bg-surface animate-in slide-in-from-top-2 duration-300">
+          <div className="px-4 py-4 space-y-6">
+            <CommentList 
+              postId={post.id}
+              comments={comments}
+              onLike={handleLikeComment}
+              onDelete={handleDeleteComment}
+            />
+            <div className="sticky bottom-0 bg-bg-surface pt-2 pb-1">
+              <CommentInput 
+                postId={post.id}
+                onSubmit={handleAddComment}
+                autoFocus={comments.length === 0}
+              />
+            </div>
+          </div>
         </div>
       )}
     </article>

@@ -7,6 +7,7 @@ import { ThemeProvider } from '@/contexts/theme-context'
 import { Toaster } from '@/components/ui/toaster'
 import { ErrorBoundary } from '@/components/error-boundary'
 import Script from 'next/script'
+import { NotificationPrompt } from "@/components/shared/notification-prompt"
 
 export const metadata: Metadata = {
   title: 'Replay - Your Daily Music Diary',
@@ -30,7 +31,7 @@ export const metadata: Metadata = {
     description: 'Transform your Spotify listening into shareable moments',
     images: ['/og-image.png'],
   },
-    generator: 'v0.app'
+  generator: 'v0.app'
 }
 
 export const viewport: Viewport = {
@@ -61,6 +62,7 @@ export default function RootLayout({
                 <RevealProvider>
                   {children}
                 </RevealProvider>
+                <NotificationPrompt />
               </AuthProvider>
             </QueryProvider>
           </ThemeProvider>
@@ -71,13 +73,9 @@ export default function RootLayout({
           {`
             if ('serviceWorker' in navigator) {
               window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/service-worker.js')
+                navigator.serviceWorker.register('/sw.js')
                   .then(reg => {
                     console.log('[v0] Service Worker registered')
-                    // Request notification permission on load if not granted
-                    if ('Notification' in window && Notification.permission === 'default') {
-                      Notification.requestPermission()
-                    }
                   })
                   .catch(err => console.error('[v0] Service Worker registration failed:', err))
               })

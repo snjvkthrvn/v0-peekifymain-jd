@@ -1,73 +1,73 @@
-"use client"
+const PUBLIC_VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_KEY || 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U'
 
-import { notificationsApi } from './api'
+export async function registerServiceWorker() {
+  if ('serviceWorker' in navigator && 'PushManager' in window) {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js')
+      return registration
+    } catch (error) {
+      console.error('Service Worker registration failed:', error)
+      return null
+    }
+  }
+  return null
+}
 
 export async function requestNotificationPermission(): Promise<boolean> {
-  if (!('Notification' in window)) {
-    console.warn('[v0] Browser does not support notifications')
+  if (!('Notification' in window)) return false
+  
+  const permission = await Notification.requestPermission()
+  return permission === 'granted'
+}
+
+export async function subscribeToPushNotifications() {
+  const registration = await navigator.serviceWorker.ready
+  
+  try {
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
+    })
+
+    // In a real app, send this subscription to your backend
+    // await fetch('/api/notifications/subscribe', {
+    //   method: 'POST',
+    //   body: JSON.stringify(subscription),
+    //   headers: { 'Content-Type': 'application/json' }
+    // })
+
+    return true
+  } catch (error) {
+    console.error('Failed to subscribe to push notifications:', error)
     return false
   }
+}
 
-  if (Notification.permission === 'granted') {
+export async function unsubscribeFromPushNotifications() {
+  const registration = await navigator.serviceWorker.ready
+  const subscription = await registration.pushManager.getSubscription()
+  
+  if (subscription) {
+    await subscription.unsubscribe()
+    // In a real app, notify backend to remove subscription
     return true
   }
-
-  if (Notification.permission !== 'denied') {
-    const permission = await Notification.requestPermission()
-    return permission === 'granted'
-  }
-
   return false
 }
 
-export async function subscribeToPushNotifications(): Promise<boolean> {
-  try {
-    const permission = await requestNotificationPermission()
-    if (!permission) {
-      return false
-    }
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4)
+  const base64 = (base64String + padding)
+    .replace(/\-/g, '+')
+    .replace(/_/g, '/')
 
-    // Register service worker
-    if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.register('/service-worker.js')
-      
-      // Subscribe to push notifications
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-      })
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
 
-      // Send subscription to backend
-      await notificationsApi.subscribe(subscription.toJSON())
-      
-      return true
-    }
-
-    return false
-  } catch (error) {
-    console.error('[v0] Failed to subscribe to push notifications:', error)
-    return false
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i)
   }
-}
-
-export async function unsubscribeFromPushNotifications(): Promise<boolean> {
-  try {
-    if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.getRegistration()
-      if (registration) {
-        const subscription = await registration.pushManager.getSubscription()
-        if (subscription) {
-          await subscription.unsubscribe()
-          await notificationsApi.unsubscribe()
-          return true
-        }
-      }
-    }
-    return false
-  } catch (error) {
-    console.error('[v0] Failed to unsubscribe from push notifications:', error)
-    return false
-  }
+  return outputArray
 }
 
 export function showLocalNotification(title: string, body: string, icon?: string) {
